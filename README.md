@@ -1,5 +1,3 @@
-> csdn修改已经发布的文章，不能换编辑方式，所以本笔记完整版见
-
 # 背景
 
 研0
@@ -495,10 +493,33 @@ AFIO->EXTICR[0] &= ~(0xF << 4);  // 清 EXTI1 的 4 位
 AFIO->EXTICR[0] |=  (0x1 << 4);  // 选择 PB1（00010000）
 ```
 
-## EXTI + AFIO 的关系一句话总结：
+## EXTI 与 AFIO 的关系一句话总结：
 
-> **EXTI 是中断“引擎”，
-> AFIO 是 GPIO 到 EXTI 的“路由器”**
+> **EXTI 是中断“引擎”（检测边沿 + 产生中断请求）**
+>
+> **AFIO 是 GPIO 到 EXTI 的“路由器”**
 
-![img](https://img-blog.csdnimg.cn/530bbadf04dc4395a6b954eb02883713.png)
+![image-20251128003824974](E:\AA研究生入学计划\MCU\A江科STM32\stm32_learn_note\assets\image-20251128003824974.png)
+
+# EXTI与NVIC
+
+> **EXTI 是中断“引擎”（产生中断请求）**
+>
+> **NVIC 是中断“调度器 / 管理中心”**
+
+NVIC 接受到 EXTI 的中断请求后，会根据优先级调度各个请求
+
+当轮到一个请求，例如轮到 EXTI0 时，就会跳转执行 `EXTI0_IRQHandler()` —— 而这个函数是程序员定义的
+
+```c
+void EXTI0_IRQHandler(void)
+{
+    if (EXTI_GetITStatus(EXTI_Line0) != RESET)
+    {
+        // 用户代码，例如翻转 LED
+        EXTI_ClearITPendingBit(EXTI_Line0);
+    }
+}
+
+```
 
