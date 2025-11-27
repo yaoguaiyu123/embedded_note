@@ -499,7 +499,7 @@ AFIO->EXTICR[0] |=  (0x1 << 4);  // 选择 PB1（00010000）
 >
 > **AFIO 是 GPIO 到 EXTI 的“路由器”**
 
-![image-20251128003824974](.\assets\image-20251128003824974.png)
+![image-20251128003824974](./assets/image-20251128003824974.png)
 
 # EXTI与NVIC
 
