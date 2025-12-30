@@ -105,6 +105,14 @@ reset_config none
 
 烧录不会在弹出报错窗口，但是板子需要**手动复位**之后才运行程序
 
+
+
+## 代码常驻自动补全
+
+[STM32CubeIDE 代码自动补全设置_stm32cubeide 自动补全-CSDN博客](https://blog.csdn.net/wyn3514/article/details/139274725)
+
+> 我试了之后发现不行，还是继续用 Alt + \ 吧
+
 # CubeIDE项目文件介绍
 
 ## stm32f4xx_hal_conf.h
@@ -189,7 +197,7 @@ reset_config none
   - 在 `lcd.c` 中，**删除/注释** `#include "lcd_ex.c"`。
   - *原因*：CubeIDE 会自动编译项目内所有 .c 文件，重复 include 会导致重复编译。
 
-### 解决“延时函数” (==这一步是可选的==)
+### 解决“延时函数” (这一步是可选的)
 
 - **抛弃原子 `delay.c`**：删除 `delay.c` 和 `delay.h`，统一使用 HAL 库时钟。
 - **替换 `lcd.c` / `lcd_ex.c` 中的延时**：
@@ -198,15 +206,83 @@ reset_config none
   - 补全微秒：手动实现一个简单的 `lcd_delay_us()`，并将代码中的 `delay_us` 替换之。
   - **公开接口**：在 `lcd.h` 中声明 `void lcd_delay_us(uint32_t us);` 供 `lcd_ex.c` 调用。
 
-### 避坑 (每次生成代码都要检查)
+### 避坑 (==每次生成代码都要检查==)
 
 - 在 `main.c` 中，**注释掉 `MX_FSMC_Init();`**
   - 原子的 `lcd_init()` 内部会重新配置 FSMC 寄存器。如果让 CubeMX 先初始化一遍，可能会导致引脚时序被覆盖或冲突
-- 在 `stm32f4xx_hal_msp.c` 中，**注释掉`HAL_SRAM_MspInit`**
+- 在 `stm32f4xx_hal_msp.c` 中，**注释掉`HAL_SRAM_MspInit()`**整个函数
   - 原子哥觉得 CubeMX 生成的代码太啰嗦或者为了兼容旧板子，自己在 `lcd.c` 里也写了一个 `HAL_SRAM_MspInit`（他也想负责初始化 FSMC 的引脚），但是与`stm32f4xx_hal_msp`中的`HAL_SRAM_MspInit`冲突了
+
+# CubeIDE中的项目重用
+
+假设现在的项目叫 `demo02`，想把它复制成 `demo03`
+
+## 1.复制与清理
+
+**复制文件夹**：在 Windows 文件管理器里，把 `demo02` 文件夹复制一份，重命名为 `demo03`
+
+**清理垃圾**：进入 `demo03` 文件夹，**删除** `Debug` 和 `Release` 文件夹。（这些是编译生成的临时文件，删了可以减小体积，而且新项目需要重新编译，留着反而容易出 Bug）
+
+## 2.关键文件改名
+
+**重命名 .ioc 文件**：
+
+- 把文件夹里的 `demo02.ioc` 重命名为 **`demo03.ioc`**。
+
+**修改 .project 文件 **：
+
+- 找到文件夹里的 **`.project`** 文件
+- 用 **vscode** 打开它。
+- 找到 `<name>demo02</name>` 这一行
+- 把它改成：`<name>demo03</name>`
+
+> **为什么要改 .project？** CubeIDE 不是靠文件夹名字识别项目的，而是靠这个文件里的 `<name>` 标签。如果不改，当你导入新项目时，IDE 会提示：“工作空间里已经有一个叫 demo02 的项目了”，导致导入失败。
+
+## 3.导入新项目
+
+- 打开 STM32CubeIDE
+
+- 点击 **File** -> **Import**
+
+- 选择 **General** -> **Existing Projects into Workspace**，点击 Next
+
+- **Select root directory**：选择你刚刚改好的 `demo03` 文件夹
+
+- **Projects** 列表里应该会出现 `demo03`
+
+- 点击 **Finish**
 
 # 串口
 
 - 轮询
 - 中断
 - DMA
+
+# 将一个裸机项目升级到FreeRTOS
+
+### 1.CubeMX 配置 (基建工程)
+
+1. **修改时基 (Timebase Source) **
+   - **操作**：`System Core` -> `SYS` -> `Timebase Source`。
+   - **修改**：将默认的 `SysTick` 改为 **`TIM1`** (或其他定时器)。
+   - **原因**：FreeRTOS 必须独占 SysTick 用来做任务调度的心跳，HAL 库的延时函数就需要用别的定时器，否则会冲突死机。
+2. **启用 FreeRTOS**
+   - **操作**：`Middleware` -> `FREERTOS` -> `Interface` 选择 **`CMSIS_V1`**。
+3. **规划与创建任务 (Tasks)**
+   - **操作**：在 `Tasks and Queues` 标签页下点击 `Add`。
+   - **优先级**：通常设为 `osPriorityNormal`。
+
+### 2.逻辑搬家 
+
+这是“大脑移植”手术，把原来的“单线程思维”转变为“多线程思维”。
+
+1. **拆分 `while(1)`**
+   - **裸机做法**：一个大 `while(1)` 里顺序执行 `检测按键` -> `刷屏` -> `闪灯`。
+   - **RTOS做法**：
+     - 按键和闪灯逻辑 -> 搬进 **`Led_Task_Entry`** 的死循环。
+     - 刷屏和串口处理 -> 搬进 **`Gui_Task_Entry`** 的死循环。
+2. **替换延时函数**
+   - **查找**：`HAL_Delay(ms)`
+   - **替换**：**`osDelay(ms)`**
+   - **原理**：`HAL_Delay` 是傻等（阻塞 CPU），`osDelay` 是休息（释放 CPU 给别的任务用）。**任务的死循环里必须包含至少一个 `osDelay`**，否则低优先级任务会饿死。
+
